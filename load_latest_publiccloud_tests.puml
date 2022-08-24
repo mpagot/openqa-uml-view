@@ -1,0 +1,84 @@
+@startuml
+
+title main_publiccloud->load_latest_publiccloud_tests:
+' ========
+' Description:
+'  UML metalanguage of test code in:
+'  https://github.com/os-autoinst/os-autoinst-distri-opensuse/blob/master/lib/main_publiccloud.pm
+'    sub load_latest_publiccloud_tests
+
+' Author: Maurizio Dati - mdati@suse.com
+' =========
+
+!pragma useVerticalIf on
+
+start
+    if (PUBLIC_CLOUD_IMG_PROOF_TESTS) then (1)
+        :publiccloud/img_proof;
+    elseif (PUBLIC_CLOUD_LTP) then (1)
+        :publiccloud/run_ltp;
+    
+    elseif (PUBLIC_CLOUD_SLES4SAP) then (1)
+        :publiccloud/sles4sap;
+    
+    elseif (PUBLIC_CLOUD_ACCNET) then (1)
+        :publiccloud/az_accelerated_net;
+    
+    elseif (PUBLIC_CLOUD_CHECK_BOOT_TIME) then (1)
+        :publiccloud/boottime;
+    
+    elseif (PUBLIC_CLOUD_FIO) then (1)
+        :publiccloud/storage_perf;
+
+    elseif (PUBLIC CLOUD PARMS) then (1)
+note
+    PUBLIC CLOUD PARAMS =
+      PUBLIC_CLOUD_CONSOLE_TESTS
+      ||PUBLIC_CLOUD_CONTAINERS
+      ||PUBLIC_CLOUD_SMOKETEST 
+      ||PUBLIC_CLOUD_AZURE_NFS_TEST
+end note
+group PC GROUP
+
+        :publiccloud/prepare_instance;
+        if (PUBLIC_CLOUD_CONSOLE_TESTS) then (1)
+            :publiccloud/check_registercloudguest;
+        else (0)
+            :publiccloud/registration;
+        endif
+        :publiccloud/ssh_interactive_start;
+        if (PUBLIC_CLOUD_CONSOLE_TESTS) then (1)
+            :load_publiccloud_consoletests();
+        elseif (PUBLIC_CLOUD_CONTAINERS) then (1)
+            :load_container_tests();
+        elseif (PUBLIC_CLOUD_SMOKETEST) then (1)
+            :publiccloud/smoketest;
+            :publiccloud/sev 
+              && (PUBLIC_CLOUD_CONFIDENTIAL_VM);
+            :publiccloud/xen 
+              && (PUBLIC_CLOUD_XEN);
+            :publiccloud/az_l8s_nvme 
+              && (PUBLIC_CLOUD_INSTANCE_TYPE);
+        elseif (PUBLIC_CLOUD_XFS) then (1)
+            :publiccloud/xfsprepare;
+            :xfstests/run;
+            :xfstests/generate_report;
+        elseif (PUBLIC_CLOUD_AZURE_NFS_TEST) then (1)
+            :publiccloud/azure_nfs;
+        endif
+        :publiccloud/ssh_interactive_end;
+end group
+
+    elseif (PUBLIC_CLOUD_UPLOAD_IMG) then (1)
+        :publiccloud/upload_image;
+    else
+        :die/
+        end
+
+    endif
+
+
+stop
+
+@enduml
+
