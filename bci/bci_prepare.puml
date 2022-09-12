@@ -1,0 +1,186 @@
+@startuml
+!pragma useVerticalIf on
+title bci_prepare
+
+' # SUSE's openQA tests
+' #
+' # Copyright 2022 SUSE LLC
+' #
+' # Copying and distribution of this file, with or without modification,
+' # are permitted in any medium without royalty provided the copyright
+' # notice and this notice are preserved.  This file is offered as-is,
+' # without any warranty.
+' 
+' # Summary: bci-tests runner
+' #   SUSE Linux Enterprise Base Container Images (SLE BCI)
+' #   provides truly open, flexible and secure container images and application
+' #   development tools for immediate use by developers and integrators without
+' #   the lock-in imposed by alternative offerings.
+' #
+' #   This module is used to test BCI repository and BCI container images.
+' #   It installs the required packages and uses the existing BCI-test
+' #   repository defined by BCI_TESTS_REPO.
+' # Maintainer: qa-c team <qa-c@suse.de>
+' 
+' use Mojo::Base qw(consoletest);
+' use XML::LibXML;
+' use utils qw(zypper_call script_retry);
+' use version_utils qw(get_os_release);
+' use db_utils qw(push_image_data_to_db);
+' use containers::common;
+' use testapi;
+' 
+start 
+note
+packages_to_install 
+end note
+
+' 
+' sub packages_to_install then (true)
+'     my ($version, $sp, $host_distri) = @_;
+    :arc=('ARCH')<
+'     # common packages
+    : packages = 'git-core', 'python3', 'gcc', 'jq'/
+    if ($host_distri == 'ubuntu') then (true)
+        :packages += 'python3-dev', 'python3-pip', 'golang'/
+    elseif ($host_distri == 'rhel' && $version > 7) then (true)
+        :packages += 'platform-python-devel', 'python3-pip', 'golang'/
+    elseif ($host_distri =~ /centos|rhel/) then (true)
+        :packages += 'python3-devel', 'python3-pip', 'golang'/
+    elseif ($host_distri == 'sles') then (true)
+        :version = "$version.$sp"/
+        :packages += 'python3-devel'/
+        if (version == 12.5) then (true)
+'             # PackageHub is needed for jq
+            :"SUSEConnect -p PackageHub/12.5/$arch";
+            :packages +=  'python36-pip'/
+        elseif (version == 15.0) then (true)
+'             # On SLES15 go needs to be installed from packagehub. On later SLES it comes from the SDK module
+            :"SUSEConnect -p PackageHub/15/$arch";
+            :packages += 'go1.10', 'skopeo'/
+        else (false)
+'             # Desktop module is needed for SDK module, which is required for installing go
+            :"SUSEConnect -p sle-module-desktop-applications/$version/$arch";
+            :"SUSEConnect -p sle-module-development-tools/$version/$arch";
+            :packages += 'go', 'skopeo'/
+        endif
+    elseif ($host_distri =~ /opensuse/) then (true)
+        :packages += 'python3-devel go skopeo'/
+    else(false)
+        :die("distribution not supported by BCI tests.";
+        end
+    endif
+
+    :return @packages>
+' }
+stop
+
+
+start
+
+note
+containers/bci_prepare.pm::run 
+end note
+
+' sub run {
+'     my ($self) = @_;
+'     $self->select_serial_terminal;
+' 
+'     # CONTAINER_RUNTIME can be "docker", "podman" or both "podman,docker"
+     'my $engines = get_required_var('
+     :CONTAINER_RUNTIME
+     'my $bci_tests_repo = get_required_var('
+     BCI_TESTS_REPO
+     'my $bci_tests_branch = get_var('
+     BCI_TESTS_BRANCH;
+' 
+'     my ($version, $sp, $host_distri) = get_os_release;
+' 
+'     record_info('Install', 'Install needed packages';
+    :packages = packages_to_install()|
+
+    if ($host_distri == 'ubuntu') then(true)
+        repeat : foreach (packages) 
+            :"apt-get -y install $pkg";
+        repeatwhile(pkg)
+        :'pip3 - -quiet install - -upgrade pip';
+        :"pip3 - -quiet install tox";
+    elseif ($host_distri =~ /centos|rhel/) then(true)
+        repeat : foreach (packages) 
+            :"yum install -y $pkg";
+        repeatwhile(pkg)
+        :'pip3 - -quiet install - -upgrade pip';
+        :"pip3 - -quiet install tox";
+    elseif ($host_distri =~ /sles|opensuse/) then(true)
+        repeat : foreach (@packages) 
+            : zypper --quiet in $pkg;
+        repeatwhile(pkg)
+'         }
+        :'pip3.6 - -quiet install - -upgrade pip';
+        :"pip3.6 - -quiet install tox - -ignore-installed six";
+     else
+        :die "Unexpected distribution";
+        end
+     endif
+' 
+'     # For BCI tests using podman, buildah package is also needed
+
+    if ($engines =~ podman) then
+        :install_buildah_when_needed($host_distri)|
+    endif
+    ' record_info('Clone', "Clone BCI tests repository: $bci_tests_repo";
+    :branch = $bci_tests_branch/
+    :exec "git clone $branch -q --depth 1 $bci_tests_repo /root/BCI-tests";
+
+'     # Pull the image in advance
+    :image = CONTAINER_IMAGE_TO_TEST /
+
+    if ('CONTAINER_IMAGE_TO_TEST') then (def)
+        ' record_info('IMAGE', $image;
+'         # If $engines are multiple (e.g. CONTAINER_RUNTIME=podman,docker), we just pick one of them for this check
+'         # as this module is executed only once.
+'         my $engine;
+        if ($engines =~ /podman/) then(true)      
+            :engine = 'podman';
+         elseif ($engines =~ /docker/) then(true)
+            :engine = 'docker';
+         else
+            :die('nok engine');
+            end
+        endif
+
+        :exec "$engine pull -q $image";
+        
+        : exec "$engine inspect $image";
+
+        :build = 'CONTAINER_IMAGE_BUILD' /
+
+        if ($build && $build != 'UNKNOWN') then(true)
+            ' record_info('BUILD#', "CONTAINER_IMAGE_BUILD=$build";
+            :reference = exec 
+            $engine inspect --type image $image 
+            | jq -r '.[0].Config.Labels."org.opensuse.reference"';
+
+'             record_info('image ref', "org.opensuse.reference: $reference";
+            if ($reference ~ $build at end) then (true)
+            else (false)
+                :die ('Miss match in image build number);
+                end
+            endif
+
+        endif
+        if (IMAGE_STORE_DATA) then (def)
+            :size_b = exec
+             $engine inspect --format \"{{.VirtualSize}}\" $image;
+
+            :push_image_data_to_db(
+            "containers",$image, $size_b  / 1000000, 
+            BCI_IMAGE_MARKER, 
+            VirtualSize) |
+        endif
+
+    endif
+
+stop
+
+@enduml

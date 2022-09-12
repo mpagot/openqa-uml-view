@@ -1,0 +1,106 @@
+@startuml
+!pragma useVerticalIf on
+' # SUSE's openQA tests
+' #
+' # Copyright 2022 SUSE LLC
+' # SPDX-License-Identifier: FSFAP
+' 
+' # Summary: Setup system which will host containers
+' # - setup networking via dhclient when is needed
+' # - make sure that ca certifications were installed
+' # - import SUSE CA certificates
+' # Maintainer: qa-c team <qa-c@suse.de>
+
+
+title containers/host_configuration.pm
+
+start
+
+note
+run
+end note
+
+
+' sub run {
+:engine = CONTAINER_RUNTIME/
+
+'    # Update the system to get the latest released state of the hosts.
+'    # Check routing table is well configure
+    
+    if (distri =~ sles|opensus) then (true)
+        : "zypper --quiet up";
+        : ensure_ca_certificates_suse_installed()|
+    
+    else (false)
+        if (distri == 'ubuntu') then(true)
+'            # Sometimes, the host doesn't get an IP automatically via dhcp, we need force it just in case
+            :"dhclient -v";
+            :"apt-get update -qq -y";
+        elseif (distri == 'centos') then(true)
+            :"dhclient -v";
+            :"yum update -q -y --nobest";
+        elseif (distri == 'rhel') then(true)
+            :"yum update -q -y";
+        endif
+    endif
+
+'    # Install engines in case they are not installed
+if ($engine =~ 'docker') then(true)
+    :install_docker_when_needed(release) |
+endif
+if ($engine =~ 'podman') then(true)
+    :install_podman_when_needed(release) |
+endif
+
+'    # It has been observed that after system update, the ip forwarding doesn't work.
+'    # In 15.3/15.4 there is a need to restart the firewall and docker daemon.
+    :TEST-REL =
+
+    release ~ sles|opensuse-leap 
+    && version == '15' 
+    && sp ~ 3|4 ;
+
+    if (TEST-REL) then (true)
+        if ($engine =~ 'docker') then (true)
+            :"systemctl restart docker";
+        endif
+        :"systemctl restart firewalld";
+    else (false)
+    endif
+
+'    # Record podman|docker version
+    repeat : foreach(engine)
+        :$engine info;
+    repeatwhile (engine)
+
+stop
+
+
+start
+
+note
+lib/utils::ensure_ca_certificates_suse_installed 
+end note
+
+    if (is_sle || is_sle_micro) then(true)
+    else (false)
+        :return> 
+        stop
+    endif
+
+    if ("rpm -qi ca-certificates-suse") then(1)
+        :check version ;
+        :"zypper ar --refresh http://download.suse.de/ibs/SUSE:/CA/SLE_$version/SUSE:CA.repo";
+        if (is_sle_micro) then(true)
+            :"transactional-update --continue pkg install ca-certificates-suse"|
+            note right
+            transactional::trup_call()
+            end note
+        else(false)
+            :"zypper in ca-certificates-suse";
+        endif 
+
+    endif
+stop
+
+@enduml

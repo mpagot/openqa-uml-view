@@ -1,0 +1,100 @@
+@startuml
+
+title main_publiccloud->load_latest_publiccloud_tests:
+' ========
+' Description:
+'  UML metalanguage of test code in:
+'  https://github.com/os-autoinst/os-autoinst-distri-opensuse/blob/master/lib/main_publiccloud.pm
+'    sub load_latest_publiccloud_tests
+
+' Author: Maurizio Dati - mdati@suse.com
+' =========
+
+!pragma useVerticalIf on
+
+' Legend: 
+' (def)   = parameter is defined has a value
+' (undef) = parameter undefined or empty
+
+start
+note
+load_latest_publiccloud_tests
+end note
+
+    :PUBLIC CLOUD PARAMS =
+
+      PUBLIC_CLOUD_CONSOLE_TESTS
+      || PUBLIC_CLOUD_CONTAINERS
+      ||PUBLIC_CLOUD_SMOKETEST 
+      ||PUBLIC_CLOUD_AZURE_NFS_TEST /
+
+    if (PUBLIC_CLOUD_IMG_PROOF_TESTS) then (def)
+        :publiccloud/img_proof;
+    (undef) elseif (PUBLIC_CLOUD_LTP) then (def)
+        :publiccloud/run_ltp;
+    
+    (undef) elseif (PUBLIC_CLOUD_SLES4SAP) then (def)
+        :publiccloud/sles4sap;
+    
+    (undef) elseif (PUBLIC_CLOUD_ACCNET) then (def)
+        :publiccloud/az_accelerated_net;
+    
+    (undef) elseif (PUBLIC_CLOUD_CHECK_BOOT_TIME) then (def)
+        :publiccloud/boottime;
+    
+    (undef) elseif (PUBLIC_CLOUD_FIO) then (def)
+        :publiccloud/storage_perf;
+
+    (undef) elseif (PUBLIC CLOUD PARMS) then (def)
+
+        :publiccloud/prepare_instance;
+        
+group PC GROUP
+        if (PUBLIC_CLOUD_CONSOLE_TESTS) then (def)
+            :publiccloud/check_registercloudguest;
+        else (undef) 
+            :publiccloud/registration;
+        endif
+
+        :publiccloud/ssh_interactive_start;
+        
+        if (PUBLIC_CLOUD_CONSOLE_TESTS) then (def)
+            :load_publiccloud_consoletests()|
+        (undef) elseif (PUBLIC_CLOUD_CONTAINERS) then (def)
+            :load_container_tests()|
+        (undef) elseif (PUBLIC_CLOUD_SMOKETEST) then (def)
+            :publiccloud/smoketest;
+            if (PUBLIC_CLOUD_CONFIDENTIAL_VM) then (def) 
+            :publiccloud/sev;
+            endif
+            if (PUBLIC_CLOUD_XEN) then  (def) 
+            :publiccloud/xen; 
+            endif 
+            if (PUBLIC_CLOUD_INSTANCE_TYPE) then (def)  
+            :publiccloud/az_l8s_nvme; 
+            endif
+        (undef) elseif (PUBLIC_CLOUD_XFS) then (def)
+            :publiccloud/xfsprepare;
+            :xfstests/run;
+            :xfstests/generate_report;
+        (undef) elseif (PUBLIC_CLOUD_AZURE_NFS_TEST) then (def)
+            :publiccloud/azure_nfs;
+        endif
+        
+        :publiccloud/ssh_interactive_end;
+
+end group
+
+    elseif (PUBLIC_CLOUD_UPLOAD_IMG) then (def)
+        :publiccloud/upload_image;
+    else (undef)
+        :die "Unexpected PUBLIC_CLOUD_* PARAM";
+        end
+
+    endif
+
+
+stop
+
+@enduml
+

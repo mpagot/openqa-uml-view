@@ -1,0 +1,48 @@
+@startuml
+!pragma useVerticalIf on
+
+title containers/slem_rancher.pm
+
+'# SUSE's openQA tests
+'#
+'# Copyright 2022 SUSE LLC
+'# SPDX-License-Identifier: FSFAP
+'#
+'# Summary: Test SLE Micro Rancher image
+'#   This image is used as a base to build a Rancher Harverster container image.
+'#   Then, that image will be used to build a Host OS on top, so
+'#   it includes the kernel, firmware, bootloader, etc.
+'#
+'# Maintainer: qa-c team <qa-c@suse.de>
+'
+
+
+start
+
+note
+run
+end note
+
+    :select_serial_terminal|
+
+    : image = CONTAINER_IMAGE_TO_TEST /
+    ' registry.suse.de/suse/sle-15-sp3/update/products/microos52/update/cr/totest/images/suse/sle-micro-rancher/5.2:latest';
+
+    :exec "podman pull $image";
+    :exec "podman run --name slem_image -dt $image";
+
+    :exec "podman exec slem_image /bin/sh -c 'ls /boot'";
+    :exec "podman exec slem_image /bin/sh -c 'ls /boot'";
+
+    :exec "podman exec slem_image /bin/sh -c 'test -d /lib/firmware'";
+    :exec "podman exec slem_image /bin/sh -c '[[ -n \"`ls -A /lib/firmware`\" ]]'";
+
+    :exec "podman exec slem_image /bin/sh -c 'test -s /etc/default/grub'";
+
+    :exec "podman exec slem_image /bin/sh -c 'zypper lr' 2>&1";
+    :exec "podman exec slem_image /bin/sh -c '[[ -z \"`ls -A /etc/zypp/repos.d`\" ]]'";
+
+
+stop
+
+@enduml
