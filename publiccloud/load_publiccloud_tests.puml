@@ -1,0 +1,51 @@
+@startuml
+
+title main_publiccloud->load_publiccloud_tests:
+' ========
+' Description:
+'  UML metalanguage of test code in:
+'  https://github.com/os-autoinst/os-autoinst-distri-opensuse/blob/master/lib/main_publiccloud.pm
+'    sub load_publiccloud_tests
+
+' Author: Maurizio Dati - mdati@suse.com
+' =========
+
+!pragma useVerticalIf on
+
+' Legend: 
+' (def)   = parameter is defined has a value
+' (undef) = parameter undefined or empty
+
+start
+note
+load_publiccloud_tests
+end note
+'group load_publiccloud_tests
+
+    if ('PUBLIC_CLOUD_PREPARE_TOOLS') then (1)
+        :load_create_publiccloud_tools_image()|
+        
+    (not 1) elseif ('PUBLIC_CLOUD_TOOLS_CLI') then (1)
+        :load_publiccloud_cli_tools()|
+
+    else (not 1)
+        : 'boot/boot_to_desktop';
+        
+'group After_boot
+
+        if  ('PUBLIC_CLOUD_MIGRATION') then (def)
+            : publiccloud/migration;
+        (undef) elseif ('PUBLIC_CLOUD_DOWNLOAD_TESTREPO') then (1)
+            :load_publiccloud_download_repos()|
+        ( not 1) elseif ('PUBLIC_CLOUD_QAM') then (def)
+            :load_maintenance_publiccloud_tests()|
+        else (undef) 
+            :load_latest_publiccloud_tests()|
+        endif
+'end group
+
+    endif
+
+'end group
+
+stop

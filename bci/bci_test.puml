@@ -1,0 +1,173 @@
+@startuml
+
+!pragma useVerticalIf on
+
+title bci_test:
+
+' ========
+' Description:
+'  UML metalanguage of test code in:
+'  https://github.com/os-autoinst/os-autoinst-distri-opensuse/blob/master/tests/containers/bci_test.pm
+'    sub run
+
+' Author: Maurizio Dati - mdati@suse.com
+' =========
+
+' # SUSE's openQA tests
+' #
+' # Copyright 2021 SUSE LLC
+' # SPDX-License-Identifier: FSFAP
+' 
+' # Summary: bci-tests runner
+' #   SUSE Linux Enterprise Base Container Images (SLE BCI)
+' #   provides truly open, flexible and secure container images and application
+' #   development tools for immediate use by developers and integrators without
+' #   the lock-in imposed by alternative offerings.
+' #
+' #   This module is used to test BCI repository and BCI container images.
+' #   It makes the call to tox to run the different test environments defined
+' #   in the variable BCI_TEST_ENVS.
+' # Maintainer: qa-c team <qa-c@suse.de>
+
+
+' use Mojo::Base qw(consoletest);
+' use XML::LibXML;
+' use testapi;
+' use File::Basename;
+' use utils qw(systemctl);
+' use version_utils qw(get_os_release);
+' 
+' my $error_count;
+
+!$TAG1="<*>"
+
+start 
+note
+run_tox_cmd
+end note
+
+'     my ($self, $env) = @_;
+'     my $bci_marker = get_var('BCI_IMAGE_MARKER');
+'     my $bci_timeout = get_var('BCI_TIMEOUT', 1200);
+'     my $bci_reruns = get_var('BCI_RERUNS', 3);
+'     my $bci_reruns_delay = get_var('BCI_RERUNS_DELAY', 10);
+:GET-ENV =
+   CONTAINER_RUNTIME
+    OS_VERSION
+    OS_PRETTY_NAME
+    BASEURL
+    TARGET
+<
+
+: cmd = 
+
+tox -e $env -- 
+    -n auto 
+    -k BCI_IMAGE_MARKER 
+    --reruns BCI_RERUNS 
+    --reruns-delay BCI_RERUNS_DELAY /
+
+: exec cmd -> ret;
+
+if (ret) then (124)
+:errors++
+record_soft_failure : TIMEOUT;
+  
+elseif (ret) then (<> 0)
+:errors++
+record_soft_failure: FAILED;
+
+else(0)
+:PASSED;
+endif
+
+stop
+
+'##################
+
+start
+note
+reset_engines
+end note
+
+:GET-ENV =
+
+BCI_IMAGE_MARKER
+BCI_TIMEOUT
+BCI_RERUNS
+BCI_RERUNS_DELAY <
+
+
+if (SLES =~ 15.3|15.4) then (true)    
+    if (CONTAINER_RUNTIME ~ docker && host_distri ~ sles|opensuse) then (true)
+        if (current_engine is podman) then (true)
+            :stop docker;
+        else (false)
+            :start docker;
+        endif
+        :restart firewalld;
+    endif
+else (false)
+endif
+
+stop
+
+start
+note
+run
+end note
+'     my ($self, $args) = @_;
+'     $self->select_serial_terminal;
+' 
+'     $error_count = 0;
+' 
+:GET-ENV =
+
+engine = runtime
+BCI_DEVEL_REPO
+BCI_TESTS_REPO
+BCI_TEST_ENVS
+VERSION
+<
+
+note
+engine=f(CONTAINER_RUNTIME)
+end note
+
+    :reset_engines(engine)|
+' 
+'     record_info('Run', "Starting the tests for the following environments:\n$test_envs");
+'     assert_script_run("cd /root/BCI-tests");
+'     assert_script_run("export 
+: SET-LOCAL-ENV:
+
+TOX_PARALLEL_NO_SPINNER=1
+CONTAINER_RUNTIME=$engine
+'$version =~ s/-SP/./g
+OS_VERSION=$version 
+TARGET=ibs-cr
+BCI_DEVEL_REPO=$bci_devel_repo >
+
+'     # Run common tests from test_all.py
+    :run_tox_cmd - all $TAG1|
+' 
+'     # Run metadata tests when needed
+    if ('BCI_TEST_METADATA') then
+        :run_tox_cmd - metadata|
+
+    endif 
+' 
+'     # Run environment specific tests
+    repeat: foreach (env)
+        :run_tox_cmd - $env|
+    repeatwhile (env)
+
+' 
+'     # Mark the job as failed if any of the tests failed
+    if (errors) then (yes)
+        :tests failed;
+        end
+    else (none)
+    endif
+
+stop

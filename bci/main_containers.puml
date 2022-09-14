@@ -1,0 +1,380 @@
+@startuml
+!pragma useVerticalIf on
+
+title main_containers->load_container_tests:
+' ========
+' Description:
+'  UML metalanguage of test code in:
+'  https://github.com/os-autoinst/os-autoinst-distri-opensuse/blob/master/lib/main_containers.pm
+'    sub load_container_tests
+
+' Author: Maurizio Dati - mdati@suse.com
+' =========
+
+
+
+'# SUSE's openQA tests
+'#
+'# Copyright 2021 SUSE LLC
+'# SPDX-License-Identifier: FSFAP
+
+'# Summary: module loader of container tests
+'# Maintainer: qa-c@suse.de
+
+' package main_containers;
+' use base 'Exporter';
+' use Exporter;
+' use utils;
+' use version_utils;
+' use main_common qw(loadtest boot_hdd_image);
+' use testapi qw(check_var get_required_var get_var set_var);
+' use Utils::Architectures;
+' use Utils::Backends;
+' use strict;
+' use warnings;
+' 
+' our @EXPORT = qw(
+'   is_container_test
+'   load_container_tests
+'   load_host_tests_podman
+'   load_image_test
+'   load_3rd_party_image_test
+'   load_container_engine_test
+' );
+' 
+' sub is_container_test {
+'     return get_var('CONTAINER_RUNTIME', 0);
+' }
+start
+note
+is_container_image_test 
+end note
+
+: is_container_image_test = 
+ CONTAINERS_UNTESTED_IMAGES
+ || BCI_TESTS
+ || CONTAINER_SLEM_RANCHER/
+
+: return is_container_image_test>
+stop
+
+' sub is_expanded_support_host {
+'     # returns if booted image is RedHat Expanded Support
+'     return get_var("HDD_1") =~ /sles-es/;
+' }
+' 
+' sub is_ubuntu_host {
+'     # returns if booted image is Ubuntu
+'     return get_var("HDD_1") =~ /ubuntu/;
+' }
+' 
+' sub load_image_test {
+'     my ($run_args) = @_;
+'     loadtest('containers/image', run_args => $run_args, name => 'image_' . $run_args->{runtime});
+' }
+' 
+' sub load_3rd_party_image_test {
+'     my ($run_args) = @_;
+'     loadtest('containers/third_party_images', run_args => $run_args, name => $run_args->{runtime} . '_3rd_party_images');
+' }
+' 
+' sub load_container_engine_test {
+'     my ($run_args) = @_;
+'     loadtest('containers/container_engine', run_args => $run_args, name => $run_args->{runtime});
+' }
+' 
+' sub load_container_helm {
+'     my ($run_args, $backend) = @_;
+'     loadtest('containers/helm', run_args => $run_args, name => $run_args->{runtime} . "_" . $backend);
+' }
+' 
+' sub load_image_tests_podman {
+'     my ($run_args) = @_;
+'     load_image_test($run_args);
+' }
+' 
+' sub load_image_tests_docker {
+'     my ($run_args) = @_;
+'     load_image_test($run_args);
+'     # container_diff package is not avaiable for <=15 in aarch64
+'     # Also, we don't want to run it on 3rd party hosts
+'     unless ((is_sle("<=15") and is_aarch64) || get_var('CONTAINERS_NO_SUSE_OS')) {
+'         loadtest 'containers/container_diff';
+'     }
+' }
+' 
+' sub load_host_tests_podman {
+'     my ($run_args) = @_;
+'     # podman package is only available as of 15-SP1
+'     unless (is_sle("<15-sp1")) {
+'         load_container_engine_test($run_args);
+'         # In Public Cloud we don't have internal resources
+'         load_image_test($run_args) unless is_public_cloud || is_alp;
+'         load_3rd_party_image_test($run_args);
+'         loadtest 'containers/podman_pods';
+'         # Firewall is not installed in JeOS OpenStack, MicroOS and Public Cloud images
+'         loadtest 'containers/podman_firewall' unless (is_public_cloud || is_openstack || is_microos || is_alp);
+'         # Buildah is not available in SLE Micro and MicroOS
+'         loadtest 'containers/buildah' unless (is_sle_micro || is_microos || is_leap_micro || is_alp);
+'         # https://github.com/containers/podman/issues/5732#issuecomment-610222293
+'         # exclude rootless poman on public cloud because of cgroups2 special settings
+'         loadtest 'containers/rootless_podman' unless (is_sle('=15-sp1') || is_openstack || is_public_cloud);
+'     }
+' }
+' 
+' sub load_host_tests_docker {
+'     my ($run_args) = @_;
+'     load_container_engine_test($run_args);
+'     # In Public Cloud we don't have internal resources
+'     load_image_test($run_args) unless is_public_cloud || is_alp;
+'     load_3rd_party_image_test($run_args);
+'     # Firewall is not installed in Public Cloud, JeOS OpenStack and MicroOS but it is in SLE Micro
+'     loadtest 'containers/docker_firewall' unless (is_public_cloud || is_openstack || is_microos);
+'     unless (is_sle("<=15") && is_aarch64) {
+'         # these 2 packages are not avaiable for <=15 (aarch64 only)
+'         # zypper-docker is not available in factory and in SLE Micro/MicroOS
+'         loadtest 'containers/zypper_docker' unless (is_tumbleweed || is_sle_micro || is_microos || is_leap_micro);
+'         loadtest 'containers/docker_runc';
+'     }
+'     unless (check_var('BETA', 1) || is_sle_micro || is_microos || is_leap_micro) {
+'         # These tests use packages from Package Hub, so they are applicable
+'         # to maintenance jobs or new products after Beta release
+'         # PackageHub is not available in SLE Micro | MicroOS
+'         loadtest 'containers/registry' if is_x86_64;
+'         loadtest 'containers/docker_compose' unless is_public_cloud;
+'     }
+'     # works currently only for x86_64, more are coming (poo#103977)
+'     # Expected to work for all but JeOS on 15sp4 after
+'     # https://github.com/os-autoinst/os-autoinst-distri-opensuse/pull/13860
+'     # Disabled on svirt backends (VMWare, Hyper-V and XEN) as the device name might be different than vdX
+'     if ((is_x86_64 && is_qemu) && !(is_public_cloud || is_openstack || is_sle_micro || is_microos || is_leap_micro)) {
+'         loadtest 'containers/validate_btrfs';
+'     }
+' }
+' 
+' sub load_host_tests_containerd_crictl {
+'     loadtest 'containers/containerd_crictl';
+' }
+' 
+' sub load_host_tests_containerd_nerdctl {
+'     loadtest 'containers/containerd_nerdctl';
+' }
+' 
+' sub load_host_tests_helm {
+'     my ($run_args) = @_;
+'     my $backends = undef;
+' 
+'     if (is_sle('15-sp3+')) {
+'         $backends = get_var("HELM_K8S_BACKEND", "GKE,EKS,AKS,K3S");
+'     } elsif (is_opensuse) {
+'         $backends = get_var("HELM_K8S_BACKEND", "K3S");
+'     } else {
+'         die("Helm backend not supported on this host");
+'     }
+' 
+'     foreach (split(',\s*', $backends)) {
+'         push @{$run_args->{backends}}, $_;
+'         load_container_helm($run_args, $_);
+'     }
+' }
+' 
+' sub load_image_tests_in_k8s {
+'     my ($run_args) = @_;
+'     my $providers = undef;
+' 
+'     $providers = get_var("PUBLIC_CLOUD_PROVIDER", "GCE,EC2,AZURE");
+' 
+'     foreach (split(',\s*', $providers)) {
+'         push @{$run_args->{provider}}, $_;
+'         loadtest('containers/push_container_image_to_pc', run_args => $run_args, name => "push_container_image_to_" . $_);
+'         push @{$run_args->{provider}}, $_;
+'         loadtest('containers/run_container_in_k8s', run_args => $run_args, name => "run_container_in_k8s_" . $_);
+'     }
+' }
+' 
+start
+note 
+update_host_and_publish_hdd
+end note
+
+'     # Method used to update pre-installed host images, booting
+'     # the existing qcow2 and publish a new qcow2
+    if (is_sle_micro) then (true)
+    else (false)
+'         # boot tests and updates are handled already by products/sle-micro/main.pm
+'         # we only need to shutdown the VM before publishing the HDD
+        : loadtest 'boot/boot_to_desktop';
+        : loadtest 'containers/update_host';
+    endif
+
+    if (is_s390x) then
+        :loadtest 'shutdown/cleanup_before_shutdown';
+    endif
+    
+    :loadtest 'shutdown/shutdown' : poweroff;
+    
+    if (is_s390x) then
+        :loadtest 'shutdown/svirt_upload_assets';
+    endif
+stop
+
+start
+note
+containers/update_host::run
+end note
+
+    :host_distri<
+
+    if ($host_distri ~ sles|opensuse) then(true)
+        :zypper --quiet up";
+    elseif ($host_distri == 'ubuntu') then(true)
+        :"dhclient -v";
+        :"apt-get update -y";
+    elseif ($host_distri == 'centos') then(true)
+        :"dhclient -v";
+        :"yum update -y --nobest";
+    elseif ($host_distri == 'rhel') then(true)
+        :"yum update -y";
+        :disable_selinux()|
+    else (false)
+        :die("Host OS not supported");
+        end
+    endif
+stop
+
+
+
+start
+note
+load_container_test 
+end note
+
+    :runtime = 'CONTAINER_RUNTIME'
+    ----
+    ISMI =  is_sle_micro || is_microos || is_leap_micro
+    ISMI-J =  ISMI || is_jeos 
+    ISMI-JA = ISMI-J || is_alp/
+
+    if (CONTAINER_UPDATE_HOST) then (def)
+        :update_host_and_publish_hdd()|
+        :return>
+        stop
+    endif
+
+    :TEST-BOOT = 
+
+    BOOT_HDD_IMAGE
+    && not ISMI-JA/
+    
+'    # Need to boot a qcow except in JeOS, SLEM and MicroOS where the system is booted already
+    if (TEST-BOOT) then (true)
+        if (is_s390x) then (true)
+            :loadtest 'installation/bootloader_zkvm';
+        endif
+        ' # On Public Cloud we're already booted in the SUT
+        if (is_public_cloud) then(true);
+        else (false)
+           :loadtest 'boot/boot_to_desktop';
+        endif
+    endif
+
+    :TEST-PREP =
+
+    is_container_image_test() 
+    && not ISMI-J
+    && not "k8s"/
+    
+    if (TEST-PREP) then(true)
+
+'         # Container Image tests common
+         :loadtest 'containers/host_configuration';
+          if ('BCI_TESTS') then (def)    
+          :loadtest 'containers/bci_prepare';
+          endif 
+    else (false)
+    endif
+
+    if ('CONTAINER_SLEM_RANCHER') then (def)
+         :loadtest 'containers/slem_rancher';
+         :return>
+          stop  
+    else (undef)
+    endif
+' 
+    ' foreach (split(',\s*', $runtime)) {
+
+    repeat : foreach runtime
+          
+'         my $run_args = OpenQA::Test::RunArgs->new();
+'         $run_args->{runtime} = $_;
+        if (is_container_image_test()) then (1)
+            if ('BCI_TESTS') then (def)
+                :loadtest 'containers/bci_test';
+'                 # For Base image we also run traditional image.pm test
+                if (BCI_TEST_ENVS && sle>=15-SP3 ) then(1)
+                    :load_image_test()|
+                endif
+            (undef) elseif (ISMI-JA) then (true)
+'                 # Test toolbox image updates
+                :loadtest 'microos/toolbox';
+            else (false)
+                :input check/
+                if  (/podman/i) then (1)
+                :load_image_tests_podman()|
+                endif
+                if (/docker/i) then (1)
+                :load_image_tests_docker()|
+                endif
+                if (/k8s/i) then (1)
+                :load_image_tests_in_k8s()|
+                endif
+            endif
+        (0) elseif ('REPO_BCI') then(def)
+            :loadtest 'containers/host_configuration';
+            :loadtest 'containers/bci_repo';
+        else (undef)
+            : input check/
+'             # Container Host tests
+            if (/podman/i && ISMI) then (1)
+            : loadtest 'microos/toolbox' |
+            endif
+            if (/podman/i) then (1)
+            : load_host_tests_podman() |
+            endif
+            if (/docker/i) then(1)
+            : load_host_tests_docker()|
+            endif
+            if (/containerd_crictl/i) then(1)
+            : load_host_tests_containerd_crictl()|
+            endif
+            if (/containerd_nerdctl/i) then(1)
+            : load_host_tests_containerd_nerdctl()|
+            endif
+            if (/kubectl/i) then(1)
+            : loadtest('containers/kubectl')|
+            endif
+            if (/helm/i) then (1)
+            : load_host_tests_helm()|
+            endif 
+
+        endif
+    repeatwhile  (runtime)
+    if (BCI_TESTS) then(def)
+        : loadtest 'containers/bci_logs' ;
+    endif
+   
+   : TEST-DUMP = 
+
+   BCI_TESTS
+   || ISMI-J 
+   || is_public_cloud 
+   || is_ubuntu_host 
+   || is_expanded_support_host /
+
+   if (TEST-DUMP) then (true)
+   else (not)
+        : loadtest 'console/coredump_collect'; 
+   endif
+stop
+
+@enduml

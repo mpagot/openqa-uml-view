@@ -1,0 +1,86 @@
+@startuml
+
+title main_publiccloud->load_maintenance_publiccloud_tests:
+' ========
+' Description:
+'  UML metalanguage of test code in:
+'  https://github.com/os-autoinst/os-autoinst-distri-opensuse/blob/master/lib/main_publiccloud.pm
+'    sub load_maintenance_publiccloud_tests
+
+' Author: Maurizio Dati - mdati@suse.com
+' =========
+
+!pragma useVerticalIf on
+
+start
+note
+load_maintenance_publiccloud_tests
+end note
+
+:publiccloud/download_repos,
+ publiccloud/prepare_instance;
+
+if (PUBLIC_CLOUD_CONSOLE_TESTS) then (def)
+  :publiccloud/check_registercloudguest;
+else (undef) 
+  :publiccloud/registration;
+endif
+:publiccloud/transfer_repos,
+ publiccloud/patch_and_reboot;
+
+if (PUBLIC_CLOUD_IMG_PROOF_TESTS) then (def)
+  :publiccloud/img_proof;
+else (undef) 
+  if('PUBLIC_CLOUD_LTP') then (def)
+     :publiccloud/run_ltp;
+  (undef) elseif (PUBLIC_CLOUD_CHECK_BOOT_TIME) then
+      :publiccloud/boottime;
+  (undef) elseif (PUBLIC_CLOUD_AHB) then (1)
+      :publiccloud/ahb;
+  else  (undef) 
+
+group PC_GROUP
+
+    :publiccloud/ssh_interactive_start;
+ 
+    if (PUBLIC_CLOUD_IMG_PROOF_TESTS) then (def)
+    else (undef) 
+      :publiccloud/instance_overview;
+    endif
+
+    if ('PUBLIC_CLOUD_CONSOLE_TESTS') then (def)
+            :load_publiccloud_consoletests()|
+    (undef) elseif ('PUBLIC_CLOUD_CONTAINERS') then (def)
+            :load_container_tests()|
+  
+    (undef) elseif ('PUBLIC_CLOUD_XFS') then (def)
+            : publiccloud/xfsprepare;
+            : xfstests/run;
+            : xfstests/generate_report;
+    (undef) elseif ('PUBLIC_CLOUD_SMOKETEST') then (def)
+            : publiccloud/smoketest;
+              if (PUBLIC_CLOUD_CONFIDENTIAL_VM) then  (def)
+                : publiccloud/sev;
+              endif
+              if (PUBLIC_CLOUD_XEN) then (def)
+                : publiccloud/xen;
+              endif
+              if (PUBLIC_CLOUD_INSTANCE_TYPE ~ Standard_L(8|16|32|64)s_v2) then (true)
+                : publicclo/az_l8s_nvme; 
+              endif
+    (undef) elseif ('PUBLIC_CLOUD_AZURE_NFS_TEST') then (def)
+            : publiccloud/azure_nfs;
+     endif
+
+    :publiccloud/ssh_interactive_end;
+
+end group
+
+  endif
+
+endif
+
+stop
+
+@enduml
+
