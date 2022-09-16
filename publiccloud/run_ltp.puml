@@ -1,0 +1,222 @@
+@startuml
+
+title tests/publiccloud/run_ltp.pm
+
+' # SUSE's openQA tests
+' #
+' # Copyright 2018-2021 SUSE LLC
+' # SPDX-License-Identifier: FSFAP
+' 
+' # Package: perl-base ltp
+' # Summary: Use perl script to run LTP on public cloud
+' #
+' # Maintainer: Clemens Famulla-Conrad <cfamullaconrad@suse.de>, qa-c team <qa-c@suse.de>
+' 
+
+
+' ========
+' Description:
+'  UML metalanguage convertion of the test code in:
+'  https://github.com/os-autoinst/os-autoinst-distri-opensuse/blob/master/tests/publiccloud/run_ltp.pm
+
+' Author: Maurizio Dati - mdati@suse.com
+' =========
+
+' !pragma useVerticalIf on
+
+' Legend: 
+' (def)   = parameter is defined has a value
+' (undef) = parameter undefined or empty
+
+'======
+
+start
+note
+    publiccloud/run_ltp::run()
+end note
+
+' sub run {
+'     my ($self, $args) = @_;
+    : $arch = PUBLIC_CLOUD_ARCH : aarch64 or x86_64 <
+
+    : $ltp_repo = LTP_REPO <
+'       default https://download.opensuse.org/repositories/benchmark:/ltp:/stable/ + version
+
+'     my $provider;
+'     my $instance;
+' 
+    : select_host_console() |
+' 
+    if (PUBLIC_CLOUD_QAM) then (def)
+        : $instance
+        $provider; 
+    else (undef)
+        : $provider = provider_factory() |
+        : $instance = create_instance() |
+        if (is_openstack) then (yes)
+        else (no)
+            :$instance->wait_for_guestregister() |
+        endif
+    endif
+ 
+    : exec :  
+    "cd /root"
+    "curl " . data_url("publiccloud/restart_instance.sh") . " -o restart_instance.sh"
+    "curl " . data_url("publiccloud/log_instance.sh") . " -o log_instance.sh"
+    "chmod +x restart_instance.sh"
+    "chmod +x log_instance.sh";
+
+    if (is_byos() && not PUBLIC_CLOUD_QAM) then (yes)
+        :registercloudguest($instance) ;
+    endif
+
+    if (is_openstack) then (yes)
+        :register_openstack($instance);
+    endif
+    
+    : exec : $instance - 
+    "sudo zypper -n addrepo -fG " . $ltp_repo . " ltp_repo";
+    : $ltp_pkg = LTP_PKG or "ltp-stable"]
+    : exec : $instance - 
+    "sudo zypper -n in $ltp_pkg";
+
+    : $ltp_env = gen_ltp_env($instance, $ltp_pkg) |
+    
+    ' # Use lib/LTP/WhiteList module to exclude tests
+    if ('LTP_KNOWN_ISSUES') then (def)
+        : $whitelist = LTP::WhiteList]
+        : $exclude = LTP_COMMAND_EXCLUDE]
+        : @skipped_tests = list_skipped_tests($ltp_env, LTP_COMMAND_FILE) |
+        if (@skipped_tests) then (def)
+            : $exclude = $exclude + @skipped_tests]
+            : LTP_COMMAND_EXCLUDE = $exclude]
+        endif
+    endif
+
+    :$runltp_ng_repo = "LTP_RUN_NG_REPO" 
+        (default "https://github.com/metan-ucw/runltp-ng.git")
+    $runltp_ng_branch = "LTP_RUN_NG_BRANCH" 
+        (default "master") /
+
+    : exec :
+    "git clone -q - -single-branch -b $runltp_ng_branch --depth 1 $runltp_ng_repo";
+    : exec : instance
+    "sudo CREATE_ENTRIES=1 ' + get_ltproot() + '/IDcheck.sh'"
+    "rpm -qa 'kernel*' --qf '%{NAME}\n' | sort | uniq | xargs rpm -qi";
+
+    : $reset_cmd =  
+    /root/restart_instance.sh ' + instance_log_args()]
+    : $log_start_cmd = 
+    /root/log_instance.sh start ' + instance_log_args()]
+
+    : exec : $log_start_cmd;
+
+    : $cmd =
+    "perl -I runltp-ng runltp-ng/runltp-ng "
+    + "- -logname=ltp_log --verbose "
+    + "- -timeout=1200 "
+    + "- -run LTP_COMMAND_FILE"
+    + "- -exclude LTP_COMMAND_EXCLUDE" 
+    + "- -backend=ssh"
+    + ":user= $instance->username"
+    + ":key_file= $instance->ssh_key"
+    + ":host= $instance->public_ip"
+    + ":reset_command= $reset_cmd"
+    + ":ssh_opts= -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+    + "--json_filter=openqa " /
+
+    : exec : $cmd;
+
+stop
+
+'======
+
+start
+note
+    instance_log_args()
+end note
+
+    : return 
+        PUBLIC_CLOUD_PROVIDER,
+        instance_id,
+        public_ip,
+        region >
+' }
+stop
+
+'======
+
+start
+note
+    gen_ltp_env()
+end note
+
+    : return $environment = 
+         product = DISTRI : VERSION
+         revision = BUILD
+         arch = PUBLIC_CLOUD_ARCH (or "ARCH")
+         kernel = exec : 'uname -r'
+         backend = BACKEND
+         flavor = FLAVOR
+         ltp_version = "rpm -q --qf '%{VERSION}\n' $ltp_pkg" >
+
+'     record_info("LTP Environment", Dumper($environment);
+stop
+
+' 1;
+' 
+' =head1 Discussion
+' 
+' Test module to run LTP test on publiccloud. The test run on a local qemu instance
+' and connect to the CSP instance using SSH. This is done via the run_ltp_ssh.pl script.
+' 
+' =head1 Configuration
+' 
+' =head2 LTP_COMMAND_FILE
+' 
+' The LTP test command file (e.g. syscalls, cve)
+' 
+' =head2 LTP_COMMAND_EXCLUDE
+' 
+' This regex is used to exclude tests from command file.
+' 
+' =head2 LTP_REPO
+' 
+' The repo which will be added and is used to install LTP package.
+' 
+' =head2 LTP_KNOWN_ISSUES
+' 
+' Used to specify a url for a json file with well known LTP issues. If an error occur
+' which is listed, then the result is overwritten with softfailure.
+' 
+' =head2 PUBLIC_CLOUD_LTP
+' 
+' If set, this test module is added to the job.
+' 
+' =head2 PUBLIC_CLOUD_PROVIDER
+' 
+' The type of the CSP (e.g. AZURE, EC2)
+' 
+' =head2 PUBLIC_CLOUD_IMAGE_LOCATION
+' 
+' The URL where the image gets downloaded from. The name of the image gets extracted
+' from this URL.
+' 
+' =head2 PUBLIC_CLOUD_KEY_ID
+' 
+' The CSP credentials key-id to used to access API.
+' 
+' =head2 PUBLIC_CLOUD_KEY_SECRET
+' 
+' The CSP credentials secret used to access API.
+' 
+' =head2 PUBLIC_CLOUD_REGION
+' 
+' The region to use. (default-azure: westeurope, default-ec2: eu-central-1)
+' 
+' =head2 PUBLIC_CLOUD_AZURE_TENANT_ID
+' 
+' This is B<only for azure> and used to create the service account file.
+' 
+' =cut
+' 
