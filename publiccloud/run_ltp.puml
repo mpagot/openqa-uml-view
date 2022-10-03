@@ -39,8 +39,8 @@ end note
 '     my ($self, $args) = @_;
     : $arch = PUBLIC_CLOUD_ARCH : aarch64 or x86_64 <
 
-    : $ltp_repo = LTP_REPO <
-'       default https://download.opensuse.org/repositories/benchmark:/ltp:/stable/ + version
+    : $ltp_repo = LTP_REPO
+       (default https://download.opensuse.org/repositories/benchmark:/ltp:/stable/ + version) <
 
 '     my $provider;
 '     my $instance;
@@ -52,7 +52,7 @@ end note
         $provider; 
     else (undef)
         : $provider = provider_factory() |
-        : $instance = create_instance() |
+        : $instance = $provider->create_instance() |
         if (is_openstack) then (yes)
         else (no)
             :$instance->wait_for_guestregister() |
@@ -67,16 +67,17 @@ end note
     "chmod +x log_instance.sh";
 
     if (is_byos() && not PUBLIC_CLOUD_QAM) then (yes)
-        :registercloudguest($instance) ;
+        :registercloudguest($instance) |
     endif
 
     if (is_openstack) then (yes)
-        :register_openstack($instance);
+        :register_openstack($instance) |
     endif
     
     : exec : $instance - 
     "sudo zypper -n addrepo -fG " . $ltp_repo . " ltp_repo";
-    : $ltp_pkg = LTP_PKG or "ltp-stable"]
+    : $ltp_pkg = LTP_PKG 
+        default: "ltp-stable" <
     : exec : $instance - 
     "sudo zypper -n in $ltp_pkg";
 
@@ -133,6 +134,13 @@ stop
 
 start
 note
+    gen_ltp_rpm()
+end note
+    : return link from $url >
+stop
+
+start
+note
     instance_log_args()
 end note
 
@@ -141,10 +149,95 @@ end note
         instance_id,
         public_ip,
         region >
-' }
 stop
 
-'======
+
+start
+note
+sub upload_ltp_logs()
+end note
+
+    ' my ($self) = @_;
+    ': my $log_file = '';
+    ' if ( $ltp_runtime =~ /^python/i ) then
+    '    :$log_file = Mojo::File::path('ulogs/result.json') ]
+    '    :upload_logs("$root_dir/result.json", 
+    '        log_name => $log_file->basename, 
+    '        failok => 1);
+    ' else 
+        '# default ltp runtime: perl
+        :$log_file = Mojo::File::path('ulogs/ltp_log.json') ]
+        :upload_logs("$root_dir/ltp_log.raw", 
+            log_name => 'ltp_log.raw', 
+            failok => 1);
+        :upload_logs("$root_dir/ltp_log.json", 
+            log_name => $log_file->basename, 
+            failok => 1);
+
+    ' endif
+
+    :my $ltp_testsuite = get_required_var('LTP_COMMAND_FILE') ]
+
+    ': upload_logs("$root_dir/result.json", 
+    '    log_name => $log_file->basename, 
+    '    failok => 1);
+
+    if ( -e $log_file->to_string) then (true)
+    else (false)
+    : return ;
+        stop
+    endif
+
+    : <b> local @INC = ($ENV{OPENQA_LIBPATH} // testapi::OPENQA_LIBPATH, @INC) </b> /
+    
+    ' eval {
+        :require OpenQA::Parser::Format::LTP ]
+
+        : read $ltp_log file ;
+        : $parser = OpenQA::Parser::Format::LTP ($log_file) ]
+        : map test :: results ]
+        : $whitelist = LTP::WhiteList  ]
+
+        repeat : for my $result in $parser->results()
+            if ($whitelist->override_known_failures(...)) then (true)
+                :$result->{result} = 'softfail';
+            else (false)
+            endif
+        repeatwhile ($result)
+        
+        : $parser->write_output(bmwqemu::result_dir()) |
+        : $parser->write_test_result(bmwqemu::result_dir()) |
+
+        :$parser->tests->each(sub {
+                $autotest::current_test->register_extra_test_results([$_->to_openqa]);
+
+    ' };
+    if ($@) then
+        : die $@; 
+        end
+    endif
+
+stop
+
+
+start
+note
+sub cleanup()
+end note
+
+    '# Ensure that the ltp script gets killed
+    : 'ETX' >
+    : $self->upload_ltp_logs() |
+
+    if ( ( {my_instance} && exists file $root_dir/log_instance.sh ) ==0 ) then (true)
+        : exec : 
+          $root_dir/log_instance.sh stop $self->instance_log_args() 
+          cd /tmp/log_instance && tar -zcf $root_dir/instance_log.tar.gz * |
+        : upload_logs("$root_dir/instance_log.tar.gz") |
+    endif
+
+stop
+
 
 start
 note
@@ -163,60 +256,4 @@ end note
 '     record_info("LTP Environment", Dumper($environment);
 stop
 
-' 1;
-' 
-' =head1 Discussion
-' 
-' Test module to run LTP test on publiccloud. The test run on a local qemu instance
-' and connect to the CSP instance using SSH. This is done via the run_ltp_ssh.pl script.
-' 
-' =head1 Configuration
-' 
-' =head2 LTP_COMMAND_FILE
-' 
-' The LTP test command file (e.g. syscalls, cve)
-' 
-' =head2 LTP_COMMAND_EXCLUDE
-' 
-' This regex is used to exclude tests from command file.
-' 
-' =head2 LTP_REPO
-' 
-' The repo which will be added and is used to install LTP package.
-' 
-' =head2 LTP_KNOWN_ISSUES
-' 
-' Used to specify a url for a json file with well known LTP issues. If an error occur
-' which is listed, then the result is overwritten with softfailure.
-' 
-' =head2 PUBLIC_CLOUD_LTP
-' 
-' If set, this test module is added to the job.
-' 
-' =head2 PUBLIC_CLOUD_PROVIDER
-' 
-' The type of the CSP (e.g. AZURE, EC2)
-' 
-' =head2 PUBLIC_CLOUD_IMAGE_LOCATION
-' 
-' The URL where the image gets downloaded from. The name of the image gets extracted
-' from this URL.
-' 
-' =head2 PUBLIC_CLOUD_KEY_ID
-' 
-' The CSP credentials key-id to used to access API.
-' 
-' =head2 PUBLIC_CLOUD_KEY_SECRET
-' 
-' The CSP credentials secret used to access API.
-' 
-' =head2 PUBLIC_CLOUD_REGION
-' 
-' The region to use. (default-azure: westeurope, default-ec2: eu-central-1)
-' 
-' =head2 PUBLIC_CLOUD_AZURE_TENANT_ID
-' 
-' This is B<only for azure> and used to create the service account file.
-' 
-' =cut
-' 
+@enduml
