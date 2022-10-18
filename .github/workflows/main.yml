@@ -1,0 +1,19 @@
+name: Draw diagrams
+on:
+  pull_request:
+    branches:
+    - main
+
+jobs:
+  diagrams:
+    name: Draw diagrams
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
+      - name: Process diagrams
+        uses: Timmy/plantuml-action@v1
+        with:
+          args: '-tpng "bci/" "publiccloud/"'
+      - name: Display diagrams
+        run: ls
