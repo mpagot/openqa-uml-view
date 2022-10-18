@@ -11,9 +11,11 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v2
+      - name: Where we are
+        run: pwd && ls -lai
       - name: Process diagrams
         uses: Timmy/plantuml-action@v1
         with:
-          args: '-stdrpt:1 -enablestats -tpng -o /tmp "bci/" "publiccloud/"'
+          args: '-v -stdrpt:1 -enablestats -tpng -o "/tmp" "bci/*.puml" "publiccloud/"'
       - name: Display diagrams
         run: ls -lai /tmp
