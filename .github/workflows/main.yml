@@ -16,6 +16,11 @@ jobs:
       - name: Process diagrams
         uses: Timmy/plantuml-action@v1
         with:
-          args: '-v -stdrpt:1 -enablestats -tpng -o "/tmp" "bci/*.puml" "publiccloud/"'
+          args: '-v -stdrpt:1 -enablestats -tpng -o "images" "bci/*.puml" "publiccloud/"'
       - name: Display diagrams
-        run: ls -lai /tmp
+        run: ls -lai images
+      - name: Publish results
+        uses: actions/upload-artifact@v3
+        with:
+          name: my-artifact
+          path: images
