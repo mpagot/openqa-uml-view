@@ -21,12 +21,12 @@ note
 load_latest_publiccloud_tests
 end note
 
-    :PUBLIC CLOUD PARAMS =
+    :PUBLIC_CLOUD_PARAMS = def(
 
       PUBLIC_CLOUD_CONSOLE_TESTS
-      || PUBLIC_CLOUD_CONTAINERS
+      ||PUBLIC_CLOUD_CONTAINERS
       ||PUBLIC_CLOUD_SMOKETEST 
-      ||PUBLIC_CLOUD_AZURE_NFS_TEST /
+      ||PUBLIC_CLOUD_AZURE_NFS_TEST) /
 
     if (PUBLIC_CLOUD_IMG_PROOF_TESTS) then (def)
         :publiccloud/img_proof;
@@ -45,7 +45,7 @@ end note
     (undef) elseif (PUBLIC_CLOUD_FIO) then (def)
         :publiccloud/storage_perf;
 
-    (undef) elseif (PUBLIC CLOUD PARMS) then (def)
+    (undef) elseif (PUBLIC_CLOUD_PARMS) then (true)
 
         :publiccloud/prepare_instance;
         
@@ -70,7 +70,7 @@ group PC GROUP
             if (PUBLIC_CLOUD_XEN) then  (def) 
             :publiccloud/xen; 
             endif 
-            if (PUBLIC_CLOUD_INSTANCE_TYPE) then (def)  
+            if (PUBLIC_CLOUD_INSTANCE_TYPE ~ Standard_L(8|16|32|64)s_v2) then (true)  
             :publiccloud/az_l8s_nvme; 
             endif
         (undef) elseif (PUBLIC_CLOUD_XFS) then (def)
@@ -87,6 +87,8 @@ end group
 
     elseif (PUBLIC_CLOUD_UPLOAD_IMG) then (def)
         :publiccloud/upload_image;
+    elseif (PUBLIC_CLOUD_AHB) then (def)
+        :publiccloud/ahb;
     else (undef)
         :die "Unexpected PUBLIC_CLOUD_* PARAM";
         end
