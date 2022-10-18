@@ -14,6 +14,6 @@ jobs:
       - name: Process diagrams
         uses: Timmy/plantuml-action@v1
         with:
-          args: '-tpng "bci/" "publiccloud/"'
+          args: '-stdrpt:1 -enablestats -tpng -o /tmp "bci/" "publiccloud/"'
       - name: Display diagrams
-        run: ls -lai
+        run: ls -lai /tmp
