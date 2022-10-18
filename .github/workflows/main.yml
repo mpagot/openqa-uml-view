@@ -18,9 +18,13 @@ jobs:
         with:
           args: '-v -stdrpt:1 -enablestats -tpng -o "images" "bci/*.puml" "publiccloud/"'
       - name: Display diagrams
-        run: ls -lai images
+        run: |
+          ls -lai bci/images
+          ls -lai publiccloud/images
       - name: Publish results
         uses: actions/upload-artifact@v3
         with:
           name: rendered
-          path: images/*.png
+          path: |
+            bci/images/*.png
+            publiccloud/images/*.png
